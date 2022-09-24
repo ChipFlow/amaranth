@@ -1,5 +1,5 @@
 from abc import ABCMeta, abstractmethod, abstractproperty
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from amaranth.hdl import *
 from amaranth.hdl.ast import ShapeCastable, ValueCastable
@@ -103,6 +103,29 @@ class Layout(ShapeCastable, metaclass=ABCMeta):
             other = new_other
         return (isinstance(other, Layout) and self.size == other.size and
                 dict(iter(self)) == dict(iter(other)))
+
+    def _convert_to_int(self, value):
+        """Convert ``value``, which may be a dict or an array of field values, to an integer using
+        the representation defined by this layout.
+
+        This method is roughly equivalent to :meth:`Const.normalize`. It is private because
+        Amaranth does not currently have a concept of a constant initializer; this requires
+        an RFC. It wil be renamed or removed in a future version."""
+        if isinstance(value, Mapping):
+            iterator = value.items()
+        elif isinstance(value, Sequence):
+            iterator = enumerate(value)
+        else:
+            raise TypeError("Layout initializer must be a mapping or a sequence, not {!r}"
+                            .format(value))
+
+        int_value = 0
+        for key, key_value in iterator:
+            field = self[key]
+            if isinstance(field.shape, Layout):
+                key_value = field.shape._convert_to_int(key_value)
+            int_value |= Const.normalize(key_value, Shape.cast(field.shape)) << field.offset
+        return int_value
 
 
 class StructLayout(Layout):
@@ -302,13 +325,19 @@ class FlexibleLayout(Layout):
 
 
 class View(ValueCastable):
-    def __init__(self, layout, target=None, *, src_loc_at=0):
+    def __init__(self, layout, target=None, *, name=None, reset=None, reset_less=None,
+            attrs=None, decoder=None, src_loc_at=0):
         try:
             cast_layout = Layout.cast(layout)
         except TypeError:
             raise TypeError("View layout must be a Layout instance, not {!r}"
                             .format(layout))
         if target is not None:
+            if (name is not None or reset is not None or reset_less is not None or
+                    attrs is not None or decoder is not None):
+                raise ValueError("View target cannot be provided at the same time as any of "
+                                 "the Signal constructor arguments (name, reset, reset_less, "
+                                 "attrs, decoder)")
             try:
                 cast_target = Value.cast(target)
             except TypeError:
@@ -319,7 +348,14 @@ class View(ValueCastable):
                                  "the {} bit(s) wide view layout"
                                  .format(len(cast_target), cast_layout.size))
         else:
-            cast_target = Signal(cast_layout, src_loc_at=src_loc_at + 1)
+            if reset is None:
+                reset = 0
+            else:
+                reset = cast_layout._convert_to_int(reset)
+            if reset_less is None:
+                reset_less = False
+            cast_target = Signal(cast_layout, name=name, reset=reset, reset_less=reset_less,
+                attrs=attrs, decoder=decoder, src_loc_at=src_loc_at + 1)
         self.__orig_layout = layout
         self.__layout = cast_layout
         self.__target = cast_target
@@ -382,8 +418,10 @@ class _AggregateMeta(ShapeCastable, type):
 
 
 class _Aggregate(View, metaclass=_AggregateMeta):
-    def __init__(self, target=None, *, src_loc_at=0):
-        super().__init__(self.__class__, target, src_loc_at=src_loc_at + 1)
+    def __init__(self, target=None, *, name=None, reset=None, reset_less=None,
+            attrs=None, decoder=None, src_loc_at=0):
+        super().__init__(self.__class__, target, name=name, reset=reset, reset_less=reset_less,
+            attrs=attrs, decoder=decoder, src_loc_at=src_loc_at + 1)
 
 
 class Struct(_Aggregate, _layout_cls=StructLayout):

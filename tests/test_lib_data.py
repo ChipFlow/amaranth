@@ -374,6 +374,35 @@ class ViewTestCase(FHDLTestCase):
         self.assertEqual(cv.shape(), unsigned(3))
         self.assertEqual(cv.name, "v")
 
+    def test_construct_signal_name(self):
+        v = View(StructLayout({"a": unsigned(1), "b": unsigned(2)}), name="named")
+        self.assertEqual(Value.cast(v).name, "named")
+
+    def test_construct_signal_reset(self):
+        v1 = View(StructLayout({"a": unsigned(1), "b": unsigned(2)}),
+                  reset={"a": 0b1, "b": 0b10})
+        self.assertEqual(Value.cast(v1).reset, 0b101)
+        v2 = View(StructLayout({"a": unsigned(1),
+                                "b": StructLayout({"x": unsigned(1), "y": unsigned(1)})}),
+                  reset={"a": 0b1, "b": {"x": 0b0, "y": 0b1}})
+        self.assertEqual(Value.cast(v2).reset, 0b101)
+        v3 = View(ArrayLayout(unsigned(2), 2),
+                  reset=[0b01, 0b10])
+        self.assertEqual(Value.cast(v3).reset, 0b1001)
+
+    def test_construct_signal_reset_less(self):
+        v = View(StructLayout({"a": unsigned(1), "b": unsigned(2)}), reset_less=True)
+        self.assertEqual(Value.cast(v).reset_less, True)
+
+    def test_construct_signal_attrs(self):
+        v = View(StructLayout({"a": unsigned(1), "b": unsigned(2)}), attrs={"debug": 1})
+        self.assertEqual(Value.cast(v).attrs, {"debug": 1})
+
+    def test_construct_signal_decoder(self):
+        decoder = lambda x: f"{x}"
+        v = View(StructLayout({"a": unsigned(1), "b": unsigned(2)}), decoder=decoder)
+        self.assertEqual(Value.cast(v).decoder, decoder)
+
     def test_layout_wrong(self):
         with self.assertRaisesRegex(TypeError,
                 r"^View layout must be a Layout instance, not <.+?>$"):
@@ -389,6 +418,17 @@ class ViewTestCase(FHDLTestCase):
                 r"^View target is 2 bit\(s\) wide, which is not compatible with the 1 bit\(s\) "
                 r"wide view layout$"):
             View(StructLayout({"a": unsigned(1)}), Signal(2))
+
+    def test_signal_reset_wrong(self):
+        with self.assertRaisesRegex(TypeError,
+                r"^Layout initializer must be a mapping or a sequence, not 1$"):
+            View(StructLayout({}), reset=0b1)
+
+    def test_target_signal_wrong(self):
+        with self.assertRaisesRegex(ValueError,
+                r"^View target cannot be provided at the same time as any of the Signal "
+                r"constructor arguments \(name, reset, reset_less, attrs, decoder\)$"):
+            View(StructLayout({}), Signal(), reset=0b1)
 
     def test_getitem(self):
         v = View(UnionLayout({
@@ -518,6 +558,17 @@ class StructTestCase(FHDLTestCase):
         self.assertRepr(v.b.q.r, "(s (slice (slice (slice (sig v) 1:9) 4:8) 0:2))")
         self.assertRepr(v.b.q.s, "(s (slice (slice (slice (sig v) 1:9) 4:8) 2:4))")
 
+    def test_construct_signal_kwargs(self):
+        decoder = lambda x: f"{x}"
+        v = View(StructLayout({"a": unsigned(1), "b": unsigned(2)}),
+            name="named", reset={"b": 0b1}, reset_less=True, attrs={"debug": 1}, decoder=decoder)
+        s = Value.cast(v)
+        self.assertEqual(s.name, "named")
+        self.assertEqual(s.reset, 0b010)
+        self.assertEqual(s.reset_less, True)
+        self.assertEqual(s.attrs, {"debug": 1})
+        self.assertEqual(s.decoder, decoder)
+
 
 class UnionTestCase(FHDLTestCase):
     def test_construct(self):
@@ -536,6 +587,17 @@ class UnionTestCase(FHDLTestCase):
         self.assertEqual(Value.cast(v).shape(), U)
         self.assertRepr(v.a, "(slice (sig v) 0:1)")
         self.assertRepr(v.b, "(s (slice (sig v) 0:3))")
+
+    def test_construct_signal_kwargs(self):
+        decoder = lambda x: f"{x}"
+        v = View(UnionLayout({"a": unsigned(1), "b": unsigned(2)}),
+            name="named", reset={"b": 0b1}, reset_less=True, attrs={"debug": 1}, decoder=decoder)
+        s = Value.cast(v)
+        self.assertEqual(s.name, "named")
+        self.assertEqual(s.reset, 0b01)
+        self.assertEqual(s.reset_less, True)
+        self.assertEqual(s.attrs, {"debug": 1})
+        self.assertEqual(s.decoder, decoder)
 
 
 # Examples from https://github.com/amaranth-lang/amaranth/issues/693
