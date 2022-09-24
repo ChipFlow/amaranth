@@ -302,31 +302,31 @@ class FlexibleLayout(Layout):
 
 
 class View(ValueCastable):
-    def __init__(self, layout, value=None, *, src_loc_at=0):
+    def __init__(self, layout, target=None, *, src_loc_at=0):
         try:
             cast_layout = Layout.cast(layout)
         except TypeError:
             raise TypeError("View layout must be a Layout instance, not {!r}"
                             .format(layout))
-        if value is not None:
+        if target is not None:
             try:
-                cast_value = Value.cast(value)
+                cast_target = Value.cast(target)
             except TypeError:
                 raise TypeError("View target must be a value-castable object, not {!r}"
-                                .format(value))
-            if len(cast_value) != cast_layout.size:
+                                .format(target))
+            if len(cast_target) != cast_layout.size:
                 raise ValueError("View target is {} bit(s) wide, which is not compatible with "
                                  "the {} bit(s) wide view layout"
-                                 .format(len(cast_value), cast_layout.size))
+                                 .format(len(cast_target), cast_layout.size))
         else:
-            cast_value = Signal(cast_layout, src_loc_at=src_loc_at + 1)
+            cast_target = Signal(cast_layout, src_loc_at=src_loc_at + 1)
         self.__orig_layout = layout
         self.__layout = cast_layout
-        self.__value  = cast_value
+        self.__target = cast_target
 
     @ValueCastable.lowermethod
     def as_value(self):
-        return self.__value
+        return self.__target
 
     def eq(self, other):
         return self.as_value().eq(other)
@@ -334,7 +334,7 @@ class View(ValueCastable):
     def __getitem__(self, key):
         if isinstance(self.__layout, ArrayLayout):
             shape = self.__layout.elem_shape
-            value = self.__value.word_select(key, Shape.cast(self.__layout.elem_shape).width)
+            value = self.__target.word_select(key, Shape.cast(self.__layout.elem_shape).width)
         else:
             if isinstance(key, (Value, ValueCastable)):
                 raise TypeError("Only views with array layout, not {!r}, may be indexed "
@@ -342,7 +342,7 @@ class View(ValueCastable):
                                 .format(self.__layout))
             field = self.__layout[key]
             shape = field.shape
-            value = self.__value[field.offset:field.offset + field.width]
+            value = self.__target[field.offset:field.offset + field.width]
         if isinstance(shape, _AggregateMeta):
             return shape(value)
         if isinstance(shape, Layout):
@@ -358,13 +358,13 @@ class View(ValueCastable):
         except KeyError:
             raise AttributeError("View of {!r} does not have a field {!r}; "
                                  "did you mean one of: {}?"
-                                 .format(self.__value, name,
+                                 .format(self.__target, name,
                                          ", ".join(repr(name)
                                                    for name, field in self.__layout)))
         if name.startswith("_"):
             raise AttributeError("View of {!r} field {!r} has a reserved name and may only be "
                                  "accessed by indexing"
-                                 .format(self.__value, name))
+                                 .format(self.__target, name))
         return item
 
 
@@ -382,8 +382,8 @@ class _AggregateMeta(ShapeCastable, type):
 
 
 class _Aggregate(View, metaclass=_AggregateMeta):
-    def __init__(self, value=None, *, src_loc_at=0):
-        super().__init__(self.__class__, value, src_loc_at=src_loc_at + 1)
+    def __init__(self, target=None, *, src_loc_at=0):
+        super().__init__(self.__class__, target, src_loc_at=src_loc_at + 1)
 
 
 class Struct(_Aggregate, _layout_cls=StructLayout):
