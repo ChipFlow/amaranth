@@ -1,5 +1,10 @@
+from enum import Enum, auto
 from ._base import Observer
 from amaranth.sim._vcdwriter import eval_value, eval_format
+
+class ToggleDirection(Enum):
+    ZERO_TO_ONE = auto()
+    ONE_TO_ZERO = auto()
 
 class ToggleCoverageObserver(Observer):
     def __init__(self, state, **kwargs):
@@ -16,7 +21,7 @@ class ToggleCoverageObserver(Observer):
         sig_id = id(signal)
         try:
             val = eval_value(self.state, signal)
-        except Exception:
+        except (KeyError, AttributeError): 
             val = int(self.state.get_signal(signal))
         try:
             curr_val = int(val)
@@ -26,16 +31,22 @@ class ToggleCoverageObserver(Observer):
 
         if sig_id not in self._prev_values:
             self._prev_values[sig_id] = curr_val
-            self._toggles[sig_id] = {"0->1": 0, "1->0": 0}
+            self._toggles[sig_id] = {
+                i: {ToggleDirection.ZERO_TO_ONE: 0, ToggleDirection.ONE_TO_ZERO: 0}
+                for i in range(signal.shape().width)
+            }
             self._signal_names[sig_id] = signal.name  
             return
 
         prev_val = self._prev_values[sig_id]
 
-        if prev_val == 0 and curr_val == 1:
-            self._toggles[sig_id]["0->1"] += 1
-        elif prev_val == 1 and curr_val == 0:
-            self._toggles[sig_id]["1->0"] += 1
+        for bit in range(signal.shape().width):
+            prev_bit = (prev_val >> bit) & 1
+            curr_bit = (curr_val >> bit) & 1
+            if prev_bit == 0 and curr_bit == 1:
+                self._toggles[sig_id][bit][ToggleDirection.ZERO_TO_ONE] += 1
+            elif prev_bit == 1 and curr_bit == 0:
+                self._toggles[sig_id][bit][ToggleDirection.ONE_TO_ZERO] += 1
 
         self._prev_values[sig_id] = curr_val
 
@@ -51,8 +62,10 @@ class ToggleCoverageObserver(Observer):
     def close(self, timestamp):
         results = self.get_results()
         print("=== Toggle Coverage Report ===")
-        for signal, toggles in results.items():
-            print(f"{signal}: 0→1={toggles['0->1']}, 1→0={toggles['1->0']}")
+        for signal, bit_toggles in results.items():
+            print(f"{signal}:")
+            for bit, counts in bit_toggles.items():
+                print(f"  Bit {bit}: 0→1={counts[ToggleDirection.ZERO_TO_ONE]}, 1→0={counts[ToggleDirection.ONE_TO_ZERO]}")
 
 
 
