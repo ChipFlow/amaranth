@@ -70,3 +70,26 @@ class ToggleCoverageObserver(Observer):
 
 
 
+class StatementCoverageObserver(Observer):
+    def __init__(self, **kwargs):
+        self._statement_hits = {}
+        super().__init__(**kwargs)
+
+    def record_statement_hit(self, statement_id: str):
+        if statement_id not in self._statement_hits:
+            self._statement_hits[statement_id] = 0
+        self._statement_hits[statement_id] += 1
+    
+    def update_signal(self, timestamp, signal):
+        pass
+
+    def update_memory(self, timestamp, memory, addr):
+        pass
+
+    def get_result(self):
+        return self._statement_hits
+
+    def close(self, timestamp):
+        print("=== Statement Coverage Report ===")
+        for stmt_id, count in sorted(self._statement_hits.items()):
+            print(f"{stmt_id}:{'HIT' if count > 0 else 'MISS'} ({count} times)")

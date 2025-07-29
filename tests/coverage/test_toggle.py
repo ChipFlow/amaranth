@@ -15,7 +15,6 @@ class ToggleDUT(Elaboratable):
         m.d.comb += self.out.eq(counter[1])
         return m
 
-
 class IrregularToggleDUT(Elaboratable):
     def __init__(self):
         self.out = Signal(name="out")
